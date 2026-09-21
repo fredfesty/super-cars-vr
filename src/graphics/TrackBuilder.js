@@ -8,7 +8,7 @@ import * as THREE from 'three';
 export class TrackBuilder {
   constructor(scene) {
     this.scene = scene;
-    this.trackWidth = 14.0;
+    this.trackWidth = 16.0;
     this.spline = null;
     this.trackPoints = [];
     this.checkpoints = [];
@@ -19,18 +19,19 @@ export class TrackBuilder {
 
   buildTrack() {
     // Define the circuit centerline control points (X, Y elevation, Z)
-    // Circuit features: Start straight, fast curves, S-chicane, JUMP RAMP, hairpin, back straight.
+    // Circuit features: Long straight runway, fast curves, S-chicane, JUMP RAMP, hairpin.
     const controlPoints = [
       new THREE.Vector3(0, 0, 0),        // Start/Finish Line
-      new THREE.Vector3(0, 0, 60),       // Main Straight
-      new THREE.Vector3(-15, 0, 110),    // Turn 1 entry
-      new THREE.Vector3(-60, 0, 140),    // Turn 1 apex
-      new THREE.Vector3(-110, 0, 130),   // Turn 1 exit
-      new THREE.Vector3(-150, 0, 90),    // Sweeper
-      new THREE.Vector3(-170, 0, 40),    // Downwards sweep
-      new THREE.Vector3(-160, 0, -20),   // S-Curve entry
-      new THREE.Vector3(-190, 0, -60),   // S-Curve mid
-      new THREE.Vector3(-180, 0, -110),  // S-Curve exit
+      new THREE.Vector3(0, 0, 45),       // Main Straight
+      new THREE.Vector3(0, 0, 85),       // Main Straight fast zone
+      new THREE.Vector3(-25, 0, 130),    // Turn 1 entry
+      new THREE.Vector3(-75, 0, 150),    // Turn 1 apex
+      new THREE.Vector3(-125, 0, 135),   // Turn 1 exit
+      new THREE.Vector3(-160, 0, 90),    // Sweeper
+      new THREE.Vector3(-175, 0, 35),    // Downwards sweep
+      new THREE.Vector3(-160, 0, -25),   // S-Curve entry
+      new THREE.Vector3(-190, 0, -65),   // S-Curve mid
+      new THREE.Vector3(-180, 0, -115),  // S-Curve exit
 
       // --- JUMP RAMP SECTION ---
       new THREE.Vector3(-140, 0.5, -145), // Ramp approach
@@ -38,14 +39,15 @@ export class TrackBuilder {
       new THREE.Vector3(-75, 1.2, -180),  // In-flight gap
       new THREE.Vector3(-45, 0, -185),    // Landing zone
 
-      new THREE.Vector3(20, 0, -185),    // Fast bend
-      new THREE.Vector3(80, 0, -160),    // Hairpin approach
-      new THREE.Vector3(120, 0, -120),   // Hairpin apex
-      new THREE.Vector3(110, 0, -60),    // Hairpin exit
-      new THREE.Vector3(70, 0, -20),     // Back straight
-      new THREE.Vector3(40, 0, -40),     // Final chicane right
-      new THREE.Vector3(15, 0, -25),     // Final chicane left
-      new THREE.Vector3(0, 0, -10),      // Approach to Start/Finish
+      new THREE.Vector3(25, 0, -185),    // Fast bend
+      new THREE.Vector3(85, 0, -160),    // Hairpin approach
+      new THREE.Vector3(125, 0, -120),   // Hairpin apex
+      new THREE.Vector3(115, 0, -65),    // Hairpin exit
+      new THREE.Vector3(75, 0, -35),     // Back straight
+      new THREE.Vector3(35, 0, -75),     // Final turn entry
+      new THREE.Vector3(12, 0, -85),     // Final turn apex
+      new THREE.Vector3(0, 0, -70),      // Approach to Start/Finish Straight
+      new THREE.Vector3(0, 0, -35),      // Grid straight (Parallel to +Z)
     ];
 
     this.spline = new THREE.CatmullRomCurve3(controlPoints, true, 'centripetal');

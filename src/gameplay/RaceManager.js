@@ -48,12 +48,12 @@ export class RaceManager {
     this.playerCar = playerCar;
     this.cars = [playerCar, ...aiCars];
 
-    // Grid starting slot coordinates (staggered 2x2 grid behind finish line)
+    // Grid starting slot coordinates (staggered grid on straight runway with plenty of space)
     const gridSlots = [
-      { t: 0.992, offset: -2.8 }, // Player (Front row pole position left)
-      { t: 0.985, offset: 2.8 },  // AI 1 (Front row right)
-      { t: 0.975, offset: -2.8 }, // AI 2 (Second row left)
-      { t: 0.968, offset: 2.8 },  // AI 3 (Second row right)
+      { t: 0.988, offset: -2.6 }, // Player (Front row left)
+      { t: 0.984, offset: 3.2 },  // AI 1 (Front row right)
+      { t: 0.974, offset: -3.2 }, // AI 2 (Second row left)
+      { t: 0.970, offset: 0.0 },  // AI 3 (Third row center)
     ];
 
     const up = new THREE.Vector3(0, 1, 0);

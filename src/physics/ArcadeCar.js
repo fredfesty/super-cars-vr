@@ -225,38 +225,59 @@ export class ArcadeCar {
   handleBarrierCollisions(colliders, cfg) {
     if (!colliders || colliders.length === 0) return;
 
-    const carRadius = cfg.carRadius;
+    // Check front and rear contact points along the car length (capsule bounds)
+    const sphereOffset = 0.85;
+    const sphereRadius = 1.0;
+    const checkPoints = [
+      this.position.clone().addScaledVector(this.forward, sphereOffset),
+      this.position.clone().addScaledVector(this.forward, -sphereOffset),
+    ];
 
-    // Check against line segments
-    for (let i = 0; i < colliders.length; i++) {
-      const seg = colliders[i];
-      const closestPoint = this.closestPointOnSegment(this.position, seg.p1, seg.p2);
-      const dist = this.position.distanceTo(closestPoint);
+    for (let cpIdx = 0; cpIdx < checkPoints.length; cpIdx++) {
+      const checkPt = checkPoints[cpIdx];
 
-      if (dist < carRadius) {
-        // Collision detected!
-        const normal = new THREE.Vector3().subVectors(this.position, closestPoint).normalize();
-        normal.y = 0; // purely horizontal bounce
+      for (let i = 0; i < colliders.length; i++) {
+        const seg = colliders[i];
+        const closestPoint = this.closestPointOnSegment(checkPt, seg.p1, seg.p2);
+        const dist = checkPt.distanceTo(closestPoint);
 
-        // Separate car out of the barrier
-        const penetration = carRadius - dist;
-        this.position.addScaledVector(normal, penetration + 0.05);
+        if (dist < sphereRadius) {
+          // Normal pointing into track away from barrier
+          const normal = new THREE.Vector3().subVectors(checkPt, closestPoint).normalize();
+          normal.y = 0;
 
-        // Reflect velocity vector & reduce speed
-        const dot = this.velocity.dot(normal);
-        if (dot < 0) {
-          this.speed *= -cfg.collisionBounce;
-          this.lateralVelocity *= 0.5;
+          // Push car position away from barrier
+          const penetration = sphereRadius - dist;
+          this.position.addScaledVector(normal, penetration + 0.04);
 
-          // Spark particles and crunch sound
-          if (this.particles) {
-            this.particles.emitCollisionSparks(closestPoint, normal, 14);
+          // Wall slide physics: decompose velocity
+          const vNormal = this.velocity.dot(normal);
+          if (vNormal < 0) {
+            // Cancel velocity into the wall, slight gentle bounce
+            this.velocity.addScaledVector(normal, -vNormal * 1.25);
+
+            // Recompute forward speed & lateral velocity
+            const forwardSpeed = this.velocity.dot(this.forward);
+            this.speed = Math.max(0, forwardSpeed * 0.94); // Retain forward momentum!
+            this.lateralVelocity = this.velocity.dot(this.right);
+
+            // Deflect car heading slightly away from wall to smoothly glide off
+            const forwardIntoWall = this.forward.dot(normal);
+            if (forwardIntoWall < 0) {
+              const turnAwaySign = Math.sign(this.right.dot(normal)) || 1;
+              this.yaw += turnAwaySign * 0.06;
+            }
+
+            // Sparks & crunch sound
+            if (this.particles) {
+              this.particles.emitCollisionSparks(closestPoint, normal, 8);
+            }
+            if (this.soundManager && this.isPlayer) {
+              this.soundManager.playCollision(0.4);
+            }
           }
-          if (this.soundManager && this.isPlayer) {
-            this.soundManager.playCollision(Math.min(1.0, Math.abs(this.speed) / 20.0 + 0.4));
-          }
+          break;
         }
-        break;
       }
     }
   }

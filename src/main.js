@@ -159,11 +159,13 @@ class Game {
       const aiCar = new ArcadeCar(aiMesh, false, null, this.particles);
       this.aiCars.push(aiCar);
 
+      const aiLaneOffsets = [3.0, -3.0, 0.0];
       const controller = new AIController(
         aiCar,
         this.trackData.spline,
         CONFIG.ai.speeds[i],
-        this.weapons
+        this.weapons,
+        aiLaneOffsets[i]
       );
       this.aiControllers.push(controller);
     }
@@ -316,34 +318,75 @@ class Game {
 
   handleCarToCarCollisions() {
     const count = this.allCars.length;
-    const minDist = CONFIG.car.carRadius * 2;
+    // Front & rear collision spheres along car length (3.2m car length)
+    const sphereOffset = 0.8;
+    const sphereRadius = 1.0;
+    const minDistance = sphereRadius * 2; // 2.0m
 
     for (let i = 0; i < count; i++) {
       for (let j = i + 1; j < count; j++) {
         const c1 = this.allCars[i];
         const c2 = this.allCars[j];
 
-        const dist = c1.position.distanceTo(c2.position);
-        if (dist < minDist && dist > 0.001) {
-          const normal = new THREE.Vector3().subVectors(c1.position, c2.position).normalize();
-          normal.y = 0;
+        const c1Pts = [
+          c1.position.clone().addScaledVector(c1.forward, sphereOffset),
+          c1.position.clone().addScaledVector(c1.forward, -sphereOffset),
+        ];
 
-          const overlap = minDist - dist;
-          c1.position.addScaledVector(normal, overlap * 0.5);
-          c2.position.addScaledVector(normal, -overlap * 0.5);
+        const c2Pts = [
+          c2.position.clone().addScaledVector(c2.forward, sphereOffset),
+          c2.position.clone().addScaledVector(c2.forward, -sphereOffset),
+        ];
 
-          // Bounce velocities
-          const tempSpeed = c1.speed;
-          c1.speed = (c1.speed * 0.4) + (c2.speed * 0.6);
-          c2.speed = (c2.speed * 0.4) + (tempSpeed * 0.6);
+        let maxOverlap = 0;
+        let collisionNormal = new THREE.Vector3();
+        let contactPoint = new THREE.Vector3();
+
+        for (let p1 = 0; p1 < 2; p1++) {
+          for (let p2 = 0; p2 < 2; p2++) {
+            const pt1 = c1Pts[p1];
+            const pt2 = c2Pts[p2];
+            const dist = pt1.distanceTo(pt2);
+
+            if (dist < minDistance && dist > 0.001) {
+              const overlap = minDistance - dist;
+              if (overlap > maxOverlap) {
+                maxOverlap = overlap;
+                collisionNormal.subVectors(pt1, pt2).normalize();
+                collisionNormal.y = 0;
+                contactPoint.addVectors(pt1, pt2).multiplyScalar(0.5);
+              }
+            }
+          }
+        }
+
+        if (maxOverlap > 0) {
+          // Push apart immediately so cars NEVER jam or lock together
+          c1.position.addScaledVector(collisionNormal, maxOverlap * 0.52);
+          c2.position.addScaledVector(collisionNormal, -maxOverlap * 0.52);
+          c1.updateMeshTransforms();
+          c2.updateMeshTransforms();
+
+          // Deflect lateral impulse (bounce away from each other)
+          const sideDot1 = collisionNormal.dot(c1.right);
+          const sideDot2 = collisionNormal.dot(c2.right);
+          c1.lateralVelocity += sideDot1 * 4.0;
+          c2.lateralVelocity -= sideDot2 * 4.0;
+
+          // Rear-end bump: transfer partial forward momentum
+          const forwardDot = collisionNormal.dot(c1.forward);
+          if (forwardDot < -0.3) {
+            // c1 hit c2 from behind: c1 slows down, c2 nudges forward
+            c1.speed *= 0.88;
+            c2.speed = Math.max(c2.speed, c1.speed + 1.5);
+          }
 
           // Sparks & Sound
-          const midPt = c1.position.clone().add(c2.position).multiplyScalar(0.5);
-          this.particles.emitCollisionSparks(midPt, normal, 8);
+          this.particles.emitCollisionSparks(contactPoint, collisionNormal, 8);
 
           if (c1.isPlayer || c2.isPlayer) {
-            this.soundManager.playCollision(0.6);
-            this.xrManager.triggerHaptic(0.5, 80);
+            this.soundManager.playCollision(0.5);
+            this.xrManager.triggerHaptic(0.5, 70);
           }
         }
       }
