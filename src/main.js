@@ -16,6 +16,7 @@ class Game {
     this.container = document.getElementById('canvas-container');
     this.speedDisplay = document.getElementById('speed-display');
     this.cameraBtn = document.getElementById('camera-toggle-btn');
+    this.invertBtn = document.getElementById('invert-steer-btn');
     this.restartBtn = document.getElementById('restart-btn');
 
     this.clock = new THREE.Clock();
@@ -187,7 +188,8 @@ class Game {
     this.inputManager = new InputManager(
       () => this.toggleCameraMode(),
       () => this.onFireRockets(),
-      () => this.resetRace()
+      () => this.resetRace(),
+      () => this.toggleInvertSteer()
     );
 
     // WebXR / Quest 3 Touch Controller Input
@@ -195,7 +197,8 @@ class Game {
       this.renderer,
       this.scene,
       () => this.toggleCameraMode(),
-      () => this.onFireRockets()
+      () => this.onFireRockets(),
+      () => this.toggleInvertSteer()
     );
   }
 
@@ -206,10 +209,34 @@ class Game {
       });
     }
 
+    if (this.invertBtn) {
+      this.invertBtn.addEventListener('click', () => {
+        this.toggleInvertSteer();
+      });
+    }
+
     if (this.restartBtn) {
       this.restartBtn.addEventListener('click', () => {
         this.resetRace();
       });
+    }
+  }
+
+  toggleInvertSteer() {
+    CONFIG.controls.invertSteer = !CONFIG.controls.invertSteer;
+    this.updateInvertSteerUI();
+    if (this.soundManager) {
+      this.soundManager.playCollision(0.2);
+    }
+  }
+
+  updateInvertSteerUI() {
+    if (this.invertBtn) {
+      const inv = CONFIG.controls.invertSteer;
+      this.invertBtn.innerText = `Invert Steer: ${inv ? 'ON' : 'OFF'} (I)`;
+      this.invertBtn.style.color = inv ? '#f59e0b' : '#94a3b8';
+      this.invertBtn.style.borderColor = inv ? '#f59e0b' : '#475569';
+      this.invertBtn.style.background = inv ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255, 255, 255, 0.05)';
     }
   }
 

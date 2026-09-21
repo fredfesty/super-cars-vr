@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CONFIG } from '../config.js';
 
 /**
  * WebXR controller and Touch controller input manager for Meta Quest 3.
@@ -6,11 +7,12 @@ import * as THREE from 'three';
  * missile firing, haptic rumble pulses, and in-VR floating HUD.
  */
 export class XRControllerManager {
-  constructor(renderer, scene, onCameraToggle, onFire) {
+  constructor(renderer, scene, onCameraToggle, onFire, onInvertToggle) {
     this.renderer = renderer;
     this.scene = scene;
     this.onCameraToggle = onCameraToggle;
     this.onFire = onFire;
+    this.onInvertToggle = onInvertToggle;
 
     this.isInVR = false;
     this.session = null;
@@ -21,7 +23,9 @@ export class XRControllerManager {
     };
 
     this.prevFirePressed = false;
+    this.prevInvertPressed = false;
     this.prevCamPressed = false;
+    this.prevStickClick = false;
 
     this.setupWebXRButton();
     this.setupXREvents();
@@ -166,8 +170,14 @@ export class XRControllerManager {
 
     // Weapons ready
     ctx.fillStyle = isReady ? '#ef4444' : '#64748b';
-    ctx.font = 'bold 28px sans-serif';
-    ctx.fillText(isReady ? '🚀 ROCKETS READY [A]' : 'RELOADING...', 40, 220);
+    ctx.font = 'bold 26px sans-serif';
+    ctx.fillText(isReady ? '🚀 ROCKETS [A]' : 'RELOADING...', 40, 225);
+
+    // Steering mode indicator
+    const isInv = CONFIG.controls?.invertSteer;
+    ctx.fillStyle = isInv ? '#f59e0b' : '#38bdf8';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.fillText(`STEER: ${isInv ? 'INVERTED [B]' : 'NORMAL [B]'}`, 255, 225);
 
     this.hudTexture.needsUpdate = true;
   }
@@ -232,6 +242,18 @@ export class XRControllerManager {
           if (leftTrigger > 0.1) {
             throttle = -leftTrigger;
           }
+
+          // Left stick click -> toggle invert steering
+          const stickClick = gp.buttons[3]?.pressed;
+          if (stickClick) {
+            if (!this.prevStickClick) {
+              this.prevStickClick = true;
+              this.triggerHaptic(0.6, 70);
+              if (this.onInvertToggle) this.onInvertToggle();
+            }
+          } else {
+            this.prevStickClick = false;
+          }
         }
 
         // Right Oculus Touch Controller (Throttle, Brake, Rockets)
@@ -251,8 +273,8 @@ export class XRControllerManager {
             throttle = -stickY;
           }
 
-          // 'A' button (gp.buttons[4]) or 'B' button -> Fire Rockets
-          const firePressed = gp.buttons[4]?.pressed || gp.buttons[5]?.pressed;
+          // 'A' button (gp.buttons[4]) -> Fire Rockets
+          const firePressed = gp.buttons[4]?.pressed;
           if (firePressed) {
             if (!this.prevFirePressed) {
               this.prevFirePressed = true;
@@ -261,6 +283,18 @@ export class XRControllerManager {
             }
           } else {
             this.prevFirePressed = false;
+          }
+
+          // 'B' button (gp.buttons[5]) -> Toggle Invert Steering
+          const invertPressed = gp.buttons[5]?.pressed;
+          if (invertPressed) {
+            if (!this.prevInvertPressed) {
+              this.prevInvertPressed = true;
+              this.triggerHaptic(0.6, 70);
+              if (this.onInvertToggle) this.onInvertToggle();
+            }
+          } else {
+            this.prevInvertPressed = false;
           }
         }
       }

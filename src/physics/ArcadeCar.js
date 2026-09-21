@@ -92,7 +92,8 @@ export class ArcadeCar {
     // 5. Jump Ramp and Airborne Physics
     this.handleElevationAndJumps(delta, ramps, trackSpline, cfg);
 
-    // 6. Barrier Collisions
+    // 6. Watertight Track Boundary Constraint (Impossible to leave the track!)
+    this.enforceTrackBoundaries(trackSpline, delta, cfg);
     this.handleBarrierCollisions(colliders, cfg);
 
     // 7. Visual Feedback (Drift smoke, wheel spin, suspension roll)
@@ -147,19 +148,20 @@ export class ArcadeCar {
       }
     }
 
-    // Steering: CORRECT DIRECTION (steer > 0 = turn right, yaw increases)
+    // Steering: inverted when CONFIG.controls.invertSteer is true
     // Keep minimum steering authority so car can maneuver at low speed
     const speedRatio = Math.min(1.0, Math.max(0.25, Math.abs(this.speed) / (cfg.maxSpeed * 0.25)));
     const reverseSign = this.speed < -0.1 ? -1 : 1;
-    const steerDelta = steer * cfg.turnSpeed * speedRatio * reverseSign * delta;
+    const steerDir = (this.isPlayer && CONFIG.controls?.invertSteer) ? -1 : 1;
+    const steerDelta = steerDir * steer * cfg.turnSpeed * speedRatio * reverseSign * delta;
     this.yaw += steerDelta;
 
-    // Visual front wheel angle (positive steer = wheels point right)
-    this.steerAngle = steer * 0.42;
+    // Visual front wheel angle (matches steer direction)
+    this.steerAngle = steerDir * steer * 0.42;
 
     // Stable arcade drift (slight slide to outside of turn, heavily damped)
     if (Math.abs(this.speed) > 5.0) {
-      this.lateralVelocity -= steerDelta * this.speed * 0.25;
+      this.lateralVelocity -= Math.sign(steerDelta) * Math.min(Math.abs(steerDelta) * this.speed * 0.25, 4.0);
     }
     // Strong grip damping so the car stays completely in control
     this.lateralVelocity *= Math.exp(-12.0 * delta);
@@ -221,6 +223,98 @@ export class ArcadeCar {
     } else {
       // Smoothly track track elevation
       this.position.y = THREE.MathUtils.lerp(this.position.y, targetGroundY, delta * 12);
+    }
+  }
+
+  enforceTrackBoundaries(trackSpline, delta, cfg) {
+    if (!trackSpline) return;
+
+    // Search closest point along track spline near current lap progress
+    const baseT = this.lapProgress || 0;
+    let bestT = baseT;
+    let closestDistSq = Infinity;
+    let closestPt = null;
+
+    // Search 50 points around current progress for sub-meter spline accuracy
+    for (let s = -25; s <= 25; s++) {
+      const t = (baseT + (s / 400) + 1.0) % 1.0;
+      const pt = trackSpline.getPointAt(t);
+      const dx = this.position.x - pt.x;
+      const dz = this.position.z - pt.z;
+      const dSq = dx * dx + dz * dz;
+      if (dSq < closestDistSq) {
+        closestDistSq = dSq;
+        bestT = t;
+        closestPt = pt;
+      }
+    }
+
+    // Fallback global search if local search missed (e.g. after spin or jump)
+    if (closestDistSq > 150) {
+      for (let g = 0; g < 100; g++) {
+        const t = g / 100;
+        const pt = trackSpline.getPointAt(t);
+        const dx = this.position.x - pt.x;
+        const dz = this.position.z - pt.z;
+        const dSq = dx * dx + dz * dz;
+        if (dSq < closestDistSq) {
+          closestDistSq = dSq;
+          bestT = t;
+          closestPt = pt;
+        }
+      }
+    }
+
+    if (!closestPt) return;
+    this.lapProgress = bestT;
+
+    const tangent = trackSpline.getTangentAt(bestT).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
+
+    // Lateral distance from track centerline
+    const toCarX = this.position.x - closestPt.x;
+    const toCarZ = this.position.z - closestPt.z;
+    const lateralDist = toCarX * normal.x + toCarZ * normal.z;
+
+    // Hard track boundary: track width is 16m (half width 8.0m, kerb to 9.1m, Armco barrier at 9.25m)
+    // Car half-width is 0.84m, so car hits Armco barrier at 8.35m
+    const maxBoundary = 8.35;
+
+    if (Math.abs(lateralDist) > maxBoundary) {
+      // Clamping: 100% Watertight constraint! Impossible to drive outside the track!
+      const sign = Math.sign(lateralDist) || 1;
+      const clampedDist = sign * maxBoundary;
+      this.position.x = closestPt.x + normal.x * clampedDist;
+      this.position.z = closestPt.z + normal.z * clampedDist;
+
+      // Inward wall normal pointing back into the track
+      const wallNormal = normal.clone().multiplyScalar(-sign);
+      const vNormal = this.velocity.dot(wallNormal);
+
+      if (vNormal < 0) {
+        // Cancel velocity into the wall, slight gentle bounce
+        this.velocity.addScaledVector(wallNormal, -vNormal * 1.35);
+
+        // Retain forward momentum along the track
+        const forwardSpeed = this.velocity.dot(this.forward);
+        this.speed = Math.max(0, forwardSpeed * 0.94);
+        this.lateralVelocity = this.velocity.dot(this.right);
+
+        // Auto-align heading along the track tangent
+        const forwardDotTangent = this.forward.dot(tangent);
+        if (forwardDotTangent < 0.94) {
+          const trackHeading = Math.atan2(tangent.x, tangent.z);
+          this.yaw = THREE.MathUtils.lerp(this.yaw, trackHeading, delta * 5.0);
+        }
+
+        if (this.particles) {
+          this.particles.emitCollisionSparks(this.position, wallNormal, 8);
+        }
+        if (this.soundManager && this.isPlayer) {
+          this.soundManager.playCollision(0.4);
+        }
+      }
     }
   }
 

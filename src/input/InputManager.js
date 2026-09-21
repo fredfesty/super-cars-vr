@@ -2,10 +2,11 @@
  * Input Manager for Keyboard and Standard Gamepads (Desktop / Mobile).
  */
 export class InputManager {
-  constructor(onCameraToggle, onFire, onReset) {
+  constructor(onCameraToggle, onFire, onReset, onInvertToggle) {
     this.onCameraToggle = onCameraToggle;
     this.onFire = onFire;
     this.onReset = onReset;
+    this.onInvertToggle = onInvertToggle;
 
     this.keys = {};
     this.gamepadIndex = null;
@@ -33,6 +34,9 @@ export class InputManager {
       }
       if (e.code === 'KeyR') {
         if (this.onReset) this.onReset();
+      }
+      if (e.code === 'KeyI') {
+        if (this.onInvertToggle) this.onInvertToggle();
       }
     });
 

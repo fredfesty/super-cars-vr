@@ -19,6 +19,11 @@ export const CONFIG = {
     gravity: -36.0,             // Airborne gravity
   },
 
+  // Controls
+  controls: {
+    invertSteer: true,          // Inverted steering enabled by default
+  },
+
   // AI Drivers
   ai: {
     speeds: [27.5, 26.0, 24.5], // AI speeds matched to player (Player is 30.0)
