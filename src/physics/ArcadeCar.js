@@ -1,0 +1,323 @@
+import * as THREE from 'three';
+import { CONFIG } from '../config.js';
+
+/**
+ * Arcade Car physics model matching the fast, responsive, slidey feel of Super Cars II.
+ * Handles acceleration, braking, lateral drift, barrier rebounds, ramp jumping, and spin-outs.
+ */
+export class ArcadeCar {
+  constructor(mesh, isPlayer = false, soundManager = null, particleSystem = null) {
+    this.mesh = mesh;
+    this.isPlayer = isPlayer;
+    this.soundManager = soundManager;
+    this.particles = particleSystem;
+
+    // Transform state
+    this.position = new THREE.Vector3();
+    this.yaw = 0;             // Car heading in radians
+    this.speed = 0;           // Forward/backward speed
+    this.lateralVelocity = 0; // Drifting sideways speed
+    this.verticalVelocity = 0;
+    this.elevation = 0;
+    this.isGrounded = true;
+
+    // Visual suspension roll & pitch
+    this.roll = 0;
+    this.pitch = 0;
+    this.steerAngle = 0;
+
+    // Spin-out state (when hit by missile)
+    this.isSpunOut = false;
+    this.spinTimer = 0;
+    this.spinAngularSpeed = 0;
+
+    // Wheel rotation accumulator
+    this.wheelRotation = 0;
+
+    // Race progress state (used by RaceManager)
+    this.lap = 1;
+    this.checkpointIndex = 0;
+    this.lapProgress = 0;
+    this.totalDistance = 0;
+    this.finished = false;
+    this.rank = 1;
+
+    // Cached vectors to avoid per-frame GC allocations
+    this.forward = new THREE.Vector3();
+    this.right = new THREE.Vector3();
+    this.velocity = new THREE.Vector3();
+  }
+
+  setPosition(pos, yaw = 0) {
+    this.position.copy(pos);
+    this.yaw = yaw;
+    this.speed = 0;
+    this.lateralVelocity = 0;
+    this.verticalVelocity = 0;
+    this.elevation = pos.y;
+    this.updateMeshTransforms();
+  }
+
+  update(delta, input, colliders, ramps, trackSpline) {
+    const cfg = CONFIG.car;
+
+    // 1. Handle Missile Spin-Out
+    if (this.isSpunOut) {
+      this.spinTimer -= delta;
+      this.yaw += this.spinAngularSpeed * delta;
+      this.speed *= Math.pow(0.2, delta); // heavy drag during spin
+      this.lateralVelocity *= Math.pow(0.2, delta);
+
+      if (this.spinTimer <= 0) {
+        this.isSpunOut = false;
+      }
+    } else {
+      // 2. Drive & Steering Input
+      this.handleInput(delta, input, cfg);
+    }
+
+    // 3. Compute Orientation Vectors
+    this.forward.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)).normalize();
+    this.right.set(this.forward.z, 0, -this.forward.x).normalize();
+
+    // 4. Update Position along Forward & Lateral axes
+    this.velocity.copy(this.forward).multiplyScalar(this.speed);
+    this.velocity.addScaledVector(this.right, this.lateralVelocity);
+
+    this.position.x += this.velocity.x * delta;
+    this.position.z += this.velocity.z * delta;
+
+    // 5. Jump Ramp and Airborne Physics
+    this.handleElevationAndJumps(delta, ramps, trackSpline, cfg);
+
+    // 6. Barrier Collisions
+    this.handleBarrierCollisions(colliders, cfg);
+
+    // 7. Visual Feedback (Drift smoke, wheel spin, suspension roll)
+    this.updateVisuals(delta, cfg);
+
+    // 8. Update Audio
+    if (this.isPlayer && this.soundManager) {
+      this.soundManager.updateEngine(this.speed, cfg.maxSpeed, input ? (input.throttle > 0) : false);
+      const driftAmount = Math.abs(this.lateralVelocity) / (cfg.maxSpeed * 0.4);
+      this.soundManager.updateSkid(driftAmount);
+    }
+
+    // 9. Sync Three.js Mesh
+    this.updateMeshTransforms();
+  }
+
+  handleInput(delta, input, cfg) {
+    if (!input) return;
+
+    const throttle = input.throttle || 0; // -1 to 1 (or 0 to 1 forward, -1 reverse)
+    const steer = input.steer || 0;       // -1 (left) to 1 (right)
+
+    // Acceleration & Braking
+    if (throttle > 0) {
+      if (this.speed < 0) {
+        // Braking while going backward
+        this.speed += cfg.braking * delta;
+      } else {
+        // Accelerating forward
+        this.speed += cfg.acceleration * throttle * delta;
+        if (this.speed > cfg.maxSpeed) this.speed = cfg.maxSpeed;
+      }
+    } else if (throttle < 0) {
+      if (this.speed > 0) {
+        // Braking while going forward
+        this.speed -= cfg.braking * delta;
+      } else {
+        // Reversing
+        this.speed -= cfg.reverseAccel * Math.abs(throttle) * delta;
+        if (this.speed < cfg.reverseSpeed) this.speed = cfg.reverseSpeed;
+      }
+    } else {
+      // Natural rolling deceleration
+      const decel = cfg.naturalDecel * delta;
+      if (Math.abs(this.speed) <= decel) {
+        this.speed = 0;
+      } else {
+        this.speed -= Math.sign(this.speed) * decel;
+      }
+    }
+
+    // Steering (effective only when car is moving)
+    const speedRatio = Math.min(1.0, Math.abs(this.speed) / (cfg.maxSpeed * 0.35));
+    const reverseSign = this.speed < -0.1 ? -1 : 1;
+    const steerDelta = -steer * cfg.turnSpeed * speedRatio * reverseSign * delta;
+    this.yaw += steerDelta;
+
+    // Target visual front wheel angle
+    this.steerAngle = -steer * 0.45;
+
+    // Drifting: Lateral slip calculation
+    const centrifugal = (this.speed * steerDelta) / Math.max(delta, 0.001);
+    this.lateralVelocity += centrifugal * 0.22;
+
+    // Tire grip restoration
+    const gripDecay = Math.pow(1.0 - cfg.gripFactor, delta * 8.0);
+    this.lateralVelocity *= gripDecay;
+
+    // Emit tire smoke if sliding sideways fast
+    if (Math.abs(this.lateralVelocity) > 4.5 && Math.abs(this.speed) > cfg.driftThreshold) {
+      if (this.particles) {
+        const rearL = this.position.clone().addScaledVector(this.forward, -1.2).addScaledVector(this.right, -0.8);
+        const rearR = this.position.clone().addScaledVector(this.forward, -1.2).addScaledVector(this.right, 0.8);
+        this.particles.emitTireSmoke(rearL, Math.abs(this.lateralVelocity));
+        this.particles.emitTireSmoke(rearR, Math.abs(this.lateralVelocity));
+      }
+    }
+  }
+
+  handleElevationAndJumps(delta, ramps, trackSpline, cfg) {
+    // Find expected track ground elevation at current location
+    let targetGroundY = 0;
+    if (trackSpline) {
+      // Check closest point on spline or ramp
+      const sample = trackSpline.getPointAt(this.lapProgress || 0);
+      targetGroundY = sample.y;
+    }
+
+    // Check if on jump ramp crest zone
+    if (ramps && this.isGrounded) {
+      ramps.forEach(ramp => {
+        const dist = this.position.distanceTo(ramp.crest);
+        if (dist < 14.0 && this.speed > 22.0) {
+          // Launch into air!
+          this.isGrounded = false;
+          this.verticalVelocity = ramp.boost;
+          this.pitch = -0.22; // Nose pitch up
+        }
+      });
+    }
+
+    if (!this.isGrounded) {
+      this.verticalVelocity += cfg.gravity * delta;
+      this.position.y += this.verticalVelocity * delta;
+
+      // Pitch nose down gradually while in flight
+      this.pitch = Math.min(0.25, this.pitch + 0.35 * delta);
+
+      if (this.position.y <= targetGroundY) {
+        this.position.y = targetGroundY;
+        this.verticalVelocity = 0;
+        this.isGrounded = true;
+        this.pitch = 0;
+
+        // Landing suspension thud & dust
+        if (this.particles) {
+          this.particles.emitCollisionSparks(this.position, new THREE.Vector3(0, 1, 0), 8);
+        }
+        if (this.soundManager && this.isPlayer) {
+          this.soundManager.playCollision(0.7);
+        }
+      }
+    } else {
+      // Smoothly track track elevation
+      this.position.y = THREE.MathUtils.lerp(this.position.y, targetGroundY, delta * 12);
+    }
+  }
+
+  handleBarrierCollisions(colliders, cfg) {
+    if (!colliders || colliders.length === 0) return;
+
+    const carRadius = cfg.carRadius;
+
+    // Check against line segments
+    for (let i = 0; i < colliders.length; i++) {
+      const seg = colliders[i];
+      const closestPoint = this.closestPointOnSegment(this.position, seg.p1, seg.p2);
+      const dist = this.position.distanceTo(closestPoint);
+
+      if (dist < carRadius) {
+        // Collision detected!
+        const normal = new THREE.Vector3().subVectors(this.position, closestPoint).normalize();
+        normal.y = 0; // purely horizontal bounce
+
+        // Separate car out of the barrier
+        const penetration = carRadius - dist;
+        this.position.addScaledVector(normal, penetration + 0.05);
+
+        // Reflect velocity vector & reduce speed
+        const dot = this.velocity.dot(normal);
+        if (dot < 0) {
+          this.speed *= -cfg.collisionBounce;
+          this.lateralVelocity *= 0.5;
+
+          // Spark particles and crunch sound
+          if (this.particles) {
+            this.particles.emitCollisionSparks(closestPoint, normal, 14);
+          }
+          if (this.soundManager && this.isPlayer) {
+            this.soundManager.playCollision(Math.min(1.0, Math.abs(this.speed) / 20.0 + 0.4));
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  closestPointOnSegment(p, a, b) {
+    const ab = new THREE.Vector3().subVectors(b, a);
+    const ap = new THREE.Vector3().subVectors(p, a);
+    const abLenSq = ab.lengthSq();
+    if (abLenSq === 0) return a.clone();
+
+    const t = Math.max(0, Math.min(1, ap.dot(ab) / abLenSq));
+    return a.clone().addScaledVector(ab, t);
+  }
+
+  triggerSpinOut() {
+    if (this.isSpunOut) return;
+    this.isSpunOut = true;
+    this.spinTimer = CONFIG.car.spinDuration;
+    this.spinAngularSpeed = (Math.random() > 0.5 ? 1 : -1) * (14.0 + Math.random() * 6.0);
+
+    if (this.particles) {
+      this.particles.emitExplosion(this.position);
+    }
+    if (this.soundManager) {
+      this.soundManager.playExplosion();
+    }
+  }
+
+  updateVisuals(delta, cfg) {
+    // Wheel spin
+    this.wheelRotation += (this.speed / 0.34) * delta;
+
+    if (this.mesh && this.mesh.wheels) {
+      const w = this.mesh.wheels;
+      // Spin all 4 wheels
+      w.fl.rotatingHub.rotation.x = this.wheelRotation;
+      w.fr.rotatingHub.rotation.x = this.wheelRotation;
+      w.rl.rotatingHub.rotation.x = this.wheelRotation;
+      w.rr.rotatingHub.rotation.x = this.wheelRotation;
+
+      // Steer front wheels
+      w.fl.rotation.y = this.steerAngle;
+      w.fr.rotation.y = this.steerAngle;
+    }
+
+    // Suspension body roll into turns
+    const targetRoll = (-this.lateralVelocity / cfg.maxSpeed) * 0.25;
+    this.roll = THREE.MathUtils.lerp(this.roll, targetRoll, delta * 10);
+
+    // Taillight brightening on brake
+    if (this.mesh && this.mesh.taillightMaterial) {
+      const isBraking = this.speed > 2.0 && (this.lateralVelocity !== 0);
+      this.mesh.taillightMaterial.emissiveIntensity = isBraking ? 5.0 : 2.0;
+    }
+  }
+
+  updateMeshTransforms() {
+    if (!this.mesh) return;
+    this.mesh.position.copy(this.position);
+    this.mesh.rotation.set(0, this.yaw, 0, 'YXZ');
+
+    if (this.mesh.visualGroup) {
+      this.mesh.visualGroup.rotation.z = this.roll;
+      this.mesh.visualGroup.rotation.x = this.pitch;
+    }
+  }
+}
