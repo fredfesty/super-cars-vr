@@ -226,8 +226,8 @@ export class ParticleSystem {
 
       if (p.life <= 0) {
         this.scene.remove(p.mesh);
-        p.mesh.geometry.dispose();
-        p.mesh.material.dispose();
+        // Do not dispose p.mesh.geometry because it is a shared geometry
+        if (p.mesh.material) p.mesh.material.dispose();
         this.particles.splice(i, 1);
         continue;
       }

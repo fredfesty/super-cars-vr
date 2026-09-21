@@ -35,7 +35,8 @@ export class WeaponsManager {
   }
 
   canFire(car) {
-    const lastFired = this.cooldowns.get(car) || 0;
+    if (!this.cooldowns.has(car)) return true;
+    const lastFired = this.cooldowns.get(car);
     const now = performance.now() / 1000;
     return (now - lastFired) >= CONFIG.weapon.cooldown;
   }
@@ -77,8 +78,8 @@ export class WeaponsManager {
     rocketMesh.quaternion.copy(car.mesh.quaternion);
     this.scene.add(rocketMesh);
 
-    // Direction vector
-    const dir = car.forward.clone().normalize();
+    // Direction vector pointing in front of the car
+    const dir = new THREE.Vector3(Math.sin(car.yaw), 0, Math.cos(car.yaw)).normalize();
 
     this.activeRockets.push({
       mesh: rocketMesh,

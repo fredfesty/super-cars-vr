@@ -23,7 +23,11 @@ export class AIController {
   }
 
   update(delta, playerCar, allCars) {
-    if (this.car.isSpunOut) return;
+    if (this.car.isSpunOut) {
+      this.input.throttle = 0;
+      this.input.steer = 0;
+      return this.input;
+    }
 
     // 1. Calculate current progress on spline
     const currentT = this.car.lapProgress || 0;

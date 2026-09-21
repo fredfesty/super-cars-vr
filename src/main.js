@@ -420,10 +420,10 @@ class Game {
 
     // 3. Update AI Cars
     this.aiControllers.forEach(controller => {
-      const aiInput = controller.update(delta, this.playerCar, this.allCars);
+      const aiInput = controller.update(delta, this.playerCar, this.allCars) || { throttle: 0, steer: 0 };
       const effectiveAIInput = {
-        throttle: allowDrive ? aiInput.throttle : 0,
-        steer: aiInput.steer,
+        throttle: allowDrive ? (aiInput.throttle || 0) : 0,
+        steer: aiInput.steer || 0,
       };
 
       controller.car.update(

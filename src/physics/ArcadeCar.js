@@ -55,6 +55,8 @@ export class ArcadeCar {
     this.lateralVelocity = 0;
     this.verticalVelocity = 0;
     this.elevation = pos.y;
+    this.forward.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)).normalize();
+    this.right.set(this.forward.z, 0, -this.forward.x).normalize();
     this.updateMeshTransforms();
   }
 
@@ -296,13 +298,10 @@ export class ArcadeCar {
     if (this.isSpunOut) return;
     this.isSpunOut = true;
     this.spinTimer = CONFIG.car.spinDuration;
-    this.spinAngularSpeed = (Math.random() > 0.5 ? 1 : -1) * (14.0 + Math.random() * 6.0);
+    this.spinAngularSpeed = (Math.random() > 0.5 ? 1 : -1) * (12.0 + Math.random() * 4.0);
 
     if (this.particles) {
-      this.particles.emitExplosion(this.position);
-    }
-    if (this.soundManager) {
-      this.soundManager.playExplosion();
+      this.particles.emitCollisionSparks(this.position, new THREE.Vector3(0, 1, 0), 12);
     }
   }
 
