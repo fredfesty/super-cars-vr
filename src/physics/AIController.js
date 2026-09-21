@@ -43,8 +43,8 @@ export class AIController {
     while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
     while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
 
-    // Steering input (-1 to 1)
-    this.input.steer = Math.max(-1.0, Math.min(1.0, -angleDiff * 2.8));
+    // Steering input (-1 to 1): positive steer turns right (increases yaw)
+    this.input.steer = Math.max(-1.0, Math.min(1.0, angleDiff * 2.5));
 
     // Throttle management: brake for sharp turns
     const turnSeverity = Math.abs(angleDiff);
@@ -61,21 +61,21 @@ export class AIController {
       this.input.throttle = 0.2;
     }
 
-    // 3. Simple Avoidance of Nearby Cars
+    // 3. Avoidance of Nearby Cars
     if (allCars) {
       for (let i = 0; i < allCars.length; i++) {
         const other = allCars[i];
         if (other === this.car) continue;
 
         const dist = this.car.position.distanceTo(other.position);
-        if (dist < 4.0) {
+        if (dist < 3.8) {
           // Push away sideways
           const toOther = new THREE.Vector3().subVectors(other.position, this.car.position);
           const rightDot = this.car.right.dot(toOther);
           if (rightDot > 0) {
-            this.input.steer += 0.4; // Steer left away
+            this.input.steer -= 0.35; // Other car is on our right, steer left
           } else {
-            this.input.steer -= 0.4; // Steer right away
+            this.input.steer += 0.35; // Other car is on our left, steer right
           }
         }
       }

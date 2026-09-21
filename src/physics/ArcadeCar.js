@@ -113,27 +113,30 @@ export class ArcadeCar {
     const throttle = input.throttle || 0; // -1 to 1 (or 0 to 1 forward, -1 reverse)
     const steer = input.steer || 0;       // -1 (left) to 1 (right)
 
-    // Acceleration & Braking
+    // Acceleration & Braking with progressive throttle curve
     if (throttle > 0) {
       if (this.speed < 0) {
-        // Braking while going backward
+        // Braking while reversing
         this.speed += cfg.braking * delta;
       } else {
-        // Accelerating forward
-        this.speed += cfg.acceleration * throttle * delta;
+        // Progressive forward acceleration (tapers smoothly near top speed)
+        const speedNorm = Math.min(1.0, Math.max(0, this.speed / cfg.maxSpeed));
+        const torque = 1.0 - (speedNorm * 0.35);
+        this.speed += cfg.acceleration * throttle * torque * delta;
         if (this.speed > cfg.maxSpeed) this.speed = cfg.maxSpeed;
       }
     } else if (throttle < 0) {
       if (this.speed > 0) {
         // Braking while going forward
         this.speed -= cfg.braking * delta;
+        if (this.speed < 0) this.speed = 0;
       } else {
         // Reversing
         this.speed -= cfg.reverseAccel * Math.abs(throttle) * delta;
         if (this.speed < cfg.reverseSpeed) this.speed = cfg.reverseSpeed;
       }
     } else {
-      // Natural rolling deceleration
+      // Natural engine braking / rolling deceleration
       const decel = cfg.naturalDecel * delta;
       if (Math.abs(this.speed) <= decel) {
         this.speed = 0;
@@ -142,25 +145,25 @@ export class ArcadeCar {
       }
     }
 
-    // Steering (effective only when car is moving)
-    const speedRatio = Math.min(1.0, Math.abs(this.speed) / (cfg.maxSpeed * 0.35));
+    // Steering: CORRECT DIRECTION (steer > 0 = turn right, yaw increases)
+    // Keep minimum steering authority so car can maneuver at low speed
+    const speedRatio = Math.min(1.0, Math.max(0.25, Math.abs(this.speed) / (cfg.maxSpeed * 0.25)));
     const reverseSign = this.speed < -0.1 ? -1 : 1;
-    const steerDelta = -steer * cfg.turnSpeed * speedRatio * reverseSign * delta;
+    const steerDelta = steer * cfg.turnSpeed * speedRatio * reverseSign * delta;
     this.yaw += steerDelta;
 
-    // Target visual front wheel angle
-    this.steerAngle = -steer * 0.45;
+    // Visual front wheel angle (positive steer = wheels point right)
+    this.steerAngle = steer * 0.42;
 
-    // Drifting: Lateral slip calculation
-    const centrifugal = (this.speed * steerDelta) / Math.max(delta, 0.001);
-    this.lateralVelocity += centrifugal * 0.22;
+    // Stable arcade drift (slight slide to outside of turn, heavily damped)
+    if (Math.abs(this.speed) > 5.0) {
+      this.lateralVelocity -= steerDelta * this.speed * 0.25;
+    }
+    // Strong grip damping so the car stays completely in control
+    this.lateralVelocity *= Math.exp(-12.0 * delta);
 
-    // Tire grip restoration
-    const gripDecay = Math.pow(1.0 - cfg.gripFactor, delta * 8.0);
-    this.lateralVelocity *= gripDecay;
-
-    // Emit tire smoke if sliding sideways fast
-    if (Math.abs(this.lateralVelocity) > 4.5 && Math.abs(this.speed) > cfg.driftThreshold) {
+    // Emit tire smoke if sliding sideways
+    if (Math.abs(this.lateralVelocity) > 3.0 && Math.abs(this.speed) > cfg.driftThreshold) {
       if (this.particles) {
         const rearL = this.position.clone().addScaledVector(this.forward, -1.2).addScaledVector(this.right, -0.8);
         const rearR = this.position.clone().addScaledVector(this.forward, -1.2).addScaledVector(this.right, 0.8);

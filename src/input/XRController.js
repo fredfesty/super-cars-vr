@@ -196,15 +196,27 @@ export class XRControllerManager {
         if (!source.gamepad) continue;
         const gp = source.gamepad;
 
+        // Read thumbstick values considering both [axes[2], axes[3]] and [axes[0], axes[1]] specs
+        let stickX = 0;
+        let stickY = 0;
+        if (gp.axes.length >= 4 && (Math.abs(gp.axes[2]) > 0.08 || Math.abs(gp.axes[3]) > 0.08)) {
+          stickX = gp.axes[2];
+          stickY = gp.axes[3];
+        } else if (gp.axes.length >= 2) {
+          stickX = gp.axes[0] || 0;
+          stickY = gp.axes[1] || 0;
+        }
+
+        // Apply deadzone and smooth curve to stick steering
+        if (Math.abs(stickX) > 0.1) {
+          const sign = Math.sign(stickX);
+          const mag = (Math.abs(stickX) - 0.1) / 0.9;
+          steer = sign * Math.pow(mag, 1.25);
+        }
+
         // Left Oculus Touch Controller (Steering & Camera)
         if (source.handedness === 'left') {
-          // Thumbstick X (axes[2])
-          const stickX = gp.axes[2] !== undefined ? gp.axes[2] : (gp.axes[0] || 0);
-          if (Math.abs(stickX) > 0.1) {
-            steer = stickX;
-          }
-
-          // 'Y' or 'X' button (gp.buttons[4] or gp.buttons[5]) or grip
+          // 'Y' or 'X' button or grip to cycle camera
           const camPressed = gp.buttons[4]?.pressed || gp.buttons[5]?.pressed || gp.buttons[1]?.pressed;
           if (camPressed) {
             if (!this.prevCamPressed) {
@@ -214,27 +226,32 @@ export class XRControllerManager {
           } else {
             this.prevCamPressed = false;
           }
+
+          // Left trigger can also be used for foot brake
+          const leftTrigger = gp.buttons[0] ? gp.buttons[0].value : 0;
+          if (leftTrigger > 0.1) {
+            throttle = -leftTrigger;
+          }
         }
 
         // Right Oculus Touch Controller (Throttle, Brake, Rockets)
         if (source.handedness === 'right') {
-          // Right Trigger (buttons[0]) -> Throttle
-          const trigger = gp.buttons[0] ? gp.buttons[0].value : 0;
-          // Right Grip (buttons[1]) -> Brake/Reverse
-          const grip = gp.buttons[1] ? gp.buttons[1].value : 0;
+          // Right Trigger -> Progressive Throttle
+          const rightTrigger = gp.buttons[0] ? gp.buttons[0].value : 0;
+          // Right Grip -> Brake/Reverse
+          const rightGrip = gp.buttons[1] ? gp.buttons[1].value : 0;
 
-          // Or Right Thumbstick Y (axes[3])
-          const stickY = gp.axes[3] !== undefined ? gp.axes[3] : (gp.axes[1] || 0);
-
-          if (trigger > 0.05) {
-            throttle = trigger;
-          } else if (grip > 0.05) {
-            throttle = -grip;
+          if (rightTrigger > 0.05) {
+            // Smooth progressive throttle curve (gentle start, strong finish)
+            throttle = Math.pow(rightTrigger, 1.35);
+          } else if (rightGrip > 0.05) {
+            throttle = -rightGrip;
           } else if (Math.abs(stickY) > 0.15) {
+            // Stick forward (-Y) is gas, stick back (+Y) is brake
             throttle = -stickY;
           }
 
-          // 'A' button (gp.buttons[4]) or trigger secondary -> Fire Rockets
+          // 'A' button (gp.buttons[4]) or 'B' button -> Fire Rockets
           const firePressed = gp.buttons[4]?.pressed || gp.buttons[5]?.pressed;
           if (firePressed) {
             if (!this.prevFirePressed) {

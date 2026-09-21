@@ -1,31 +1,31 @@
 export const CONFIG = {
   // Car Physics (Super Cars II arcade feel)
   car: {
-    maxSpeed: 48.0,             // Top forward speed in world units/sec (~170 km/h display)
-    reverseSpeed: -16.0,        // Max reverse speed
-    acceleration: 38.0,         // Forward acceleration
-    braking: 55.0,              // Foot brake strength
-    reverseAccel: 22.0,         // Reverse acceleration
-    naturalDecel: 12.0,         // Rolling resistance / engine braking
-    turnSpeed: 3.2,             // Angular steering rate (radians/sec)
-    gripFactor: 0.88,           // Sideways friction (lower = driftier, higher = grippier)
-    driftThreshold: 20.0,       // Speed above which tires start sliding and emitting smoke
-    collisionBounce: 0.45,      // Rebound elastic bounce against walls/rivals
-    carRadius: 1.4,             // Collision boundary radius
+    maxSpeed: 30.0,             // Controllable arcade speed (~110 km/h display)
+    reverseSpeed: -10.0,        // Max reverse speed
+    acceleration: 15.0,         // Smooth progressive acceleration (was 38.0)
+    braking: 35.0,              // Responsive braking
+    reverseAccel: 12.0,         // Reverse acceleration
+    naturalDecel: 16.0,         // Engine braking for crisp corner entry
+    turnSpeed: 2.8,             // Steering rate
+    gripFactor: 0.94,           // High grip for stable track holding
+    driftThreshold: 16.0,       // Speed above which tires start sliding
+    collisionBounce: 0.35,      // Controlled rebound against walls
+    carRadius: 1.3,             // Collision boundary radius
     carLength: 3.2,
     carWidth: 1.8,
-    spinDuration: 1.6,          // Seconds car is spun out when hit by a missile
-    rampBoost: 16.0,            // Vertical launch velocity on jumps
+    spinDuration: 1.5,          // Seconds car is spun out when hit by a missile
+    rampBoost: 15.0,            // Vertical launch velocity on jumps
     gravity: -36.0,             // Airborne gravity
   },
 
   // AI Drivers
   ai: {
-    speeds: [43.0, 41.5, 39.5], // AI top speeds (Player is 48.0 for competitive challenge)
-    skillVariance: 0.15,
+    speeds: [27.5, 26.0, 24.5], // AI speeds matched to player (Player is 30.0)
+    skillVariance: 0.12,
     collisionAvoidance: 3.5,
-    rocketAggressiveness: 0.65, // Chance of firing if player is in sight
-    fireDistance: 45.0,
+    rocketAggressiveness: 0.5,  // Chance of firing if player is in sight
+    fireDistance: 40.0,
   },
 
   // Combat & Weapons
