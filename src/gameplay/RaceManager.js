@@ -65,6 +65,7 @@ export class RaceManager {
       const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
 
       const startPos = pt.clone().addScaledVector(normal, slot.offset);
+      startPos.y = Math.max(0, pt.y) + 0.04;
       const yaw = Math.atan2(tangent.x, tangent.z);
 
       car.setPosition(startPos, yaw);

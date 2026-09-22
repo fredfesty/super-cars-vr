@@ -3,7 +3,7 @@ import * as THREE from 'three';
 /**
  * High-Fidelity Procedural 3D Circuit for Super Cars II VR.
  * Features:
- * - Continuous extruded asphalt with rubbered-in racing lines and painted starting grid.
+ * - Solid 3D extruded asphalt track bed with side skirts, rubbered racing lines, and painted grid.
  * - Continuous 3D beveled red & white FIA curb ribbons (zero gaps, zero floating blocks).
  * - Continuous 3D corrugated W-beam Armco crash barriers with vertical steel posts behind the rails.
  * - Grandstand along main straight with 8 seating tiers, spectators, and cantilever roof (safely outside track).
@@ -11,6 +11,7 @@ import * as THREE from 'three';
  * - Spline-aligned distance brake boards (150, 100, 50) before Turn 1.
  * - Stadium floodlight pylons, jump ramp support trusses, and tire barrier walls.
  * - Lush green terrain with runoff sand/gravel traps and 50+ validated 3D trees (>=18m from centerline).
+ * - 100% Non-submerging track elevation guarantees: road never clips beneath grass plane.
  */
 export class TrackBuilder {
   constructor(scene) {
@@ -25,7 +26,7 @@ export class TrackBuilder {
   }
 
   buildTrack() {
-    // 155-meter long straight runway at start/finish line for safe, fair grid starts
+    // Smooth control points with balanced jump ramp launch crest & landing zone
     const controlPoints = [
       new THREE.Vector3(0, 0, 0),        // Start/Finish Line
       new THREE.Vector3(0, 0, 45),       // Main Straight
@@ -40,12 +41,16 @@ export class TrackBuilder {
       new THREE.Vector3(-180, 0, -115),  // S-Curve exit
 
       // --- JUMP RAMP SECTION ---
-      new THREE.Vector3(-140, 0.5, -145), // Ramp approach
+      new THREE.Vector3(-150, 0, -135),   // Approach to ramp
+      new THREE.Vector3(-125, 1.6, -155), // Ramp takeoff slope
       new THREE.Vector3(-105, 3.8, -165), // Ramp peak / launch crest!
-      new THREE.Vector3(-75, 1.2, -180),  // In-flight gap
-      new THREE.Vector3(-45, 0, -185),    // Landing zone
+      new THREE.Vector3(-80, 2.0, -176),  // In-flight descent
+      new THREE.Vector3(-55, 0.4, -183),  // Landing approach
+      new THREE.Vector3(-35, 0, -185),    // Touchdown
+      new THREE.Vector3(-15, 0, -185),    // Level straight
+      new THREE.Vector3(5, 0, -185),      // Level straight
 
-      new THREE.Vector3(25, 0, -185),    // Fast bend
+      new THREE.Vector3(35, 0, -180),    // Fast bend
       new THREE.Vector3(85, 0, -160),    // Hairpin approach
       new THREE.Vector3(125, 0, -120),   // Hairpin apex
       new THREE.Vector3(115, 0, -65),    // Hairpin exit
@@ -57,8 +62,26 @@ export class TrackBuilder {
     ];
 
     this.spline = new THREE.CatmullRomCurve3(controlPoints, true, 'centripetal');
+
+    // Bulletproof elevation clamp: never allow spline elevation to drop below ground level (0.0)
+    const origGetPointAt = this.spline.getPointAt.bind(this.spline);
+    this.spline.getPointAt = (u, target) => {
+      const pt = origGetPointAt(u, target);
+      if (pt.y < 0) pt.y = 0;
+      return pt;
+    };
+    const origGetPoint = this.spline.getPoint.bind(this.spline);
+    this.spline.getPoint = (t, target) => {
+      const pt = origGetPoint(t, target);
+      if (pt.y < 0) pt.y = 0;
+      return pt;
+    };
+
     const divisions = 450;
     this.trackPoints = this.spline.getSpacedPoints(divisions);
+    for (let i = 0; i < this.trackPoints.length; i++) {
+      if (this.trackPoints[i].y < 0) this.trackPoints[i].y = 0;
+    }
 
     // Build the high-fidelity 3D circuit
     this.createGround();
@@ -121,7 +144,8 @@ export class TrackBuilder {
 
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.05;
+    // Ground plane sits safely at -0.20m, well beneath the elevated road and kerbs (+0.04m)
+    ground.position.y = -0.20;
     ground.receiveShadow = true;
     this.scene.add(ground);
   }
@@ -137,21 +161,21 @@ export class TrackBuilder {
     // Turn 1 runoff
     const trap1 = new THREE.Mesh(new THREE.RingGeometry(60, 115, 32), trapMat);
     trap1.rotation.x = -Math.PI / 2;
-    trap1.position.set(-85, -0.04, 155);
+    trap1.position.set(-85, -0.19, 155);
     trap1.receiveShadow = true;
     this.scene.add(trap1);
 
     // Hairpin runoff
     const trap2 = new THREE.Mesh(new THREE.PlaneGeometry(90, 75), trapMat);
     trap2.rotation.x = -Math.PI / 2;
-    trap2.position.set(128, -0.04, -125);
+    trap2.position.set(128, -0.19, -125);
     trap2.receiveShadow = true;
     this.scene.add(trap2);
 
     // S-curve runoff
     const trap3 = new THREE.Mesh(new THREE.PlaneGeometry(60, 50), trapMat);
     trap3.rotation.x = -Math.PI / 2;
-    trap3.position.set(-195, -0.04, -65);
+    trap3.position.set(-195, -0.19, -65);
     trap3.receiveShadow = true;
     this.scene.add(trap3);
   }
@@ -166,25 +190,52 @@ export class TrackBuilder {
 
     const up = new THREE.Vector3(0, 1, 0);
 
+    // Generate solid 3D road deck with asphalt top and side embankment skirts
     for (let i = 0; i <= divisions; i++) {
       const t = i / divisions;
       const pt = this.spline.getPointAt(t);
+      const elevation = Math.max(0, pt.y);
       const tangent = this.spline.getTangentAt(t).normalize();
       const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
 
       const leftPt = pt.clone().addScaledVector(normal, -halfWidth);
       const rightPt = pt.clone().addScaledVector(normal, halfWidth);
 
-      positions.push(leftPt.x, leftPt.y + 0.02, leftPt.z);
-      positions.push(rightPt.x, rightPt.y + 0.02, rightPt.z);
+      // Vertex 0: Left side skirt bottom (in the grass, y = elevation - 0.20)
+      positions.push(leftPt.x, elevation - 0.20, leftPt.z);
+      normals.push(-normal.x, 0, -normal.z);
+      uvs.push(0, t * 65);
 
-      normals.push(0, 1, 0, 0, 1, 0);
-      uvs.push(0, t * 65, 1, t * 65);
+      // Vertex 1: Left road surface top (y = elevation + 0.04)
+      positions.push(leftPt.x, elevation + 0.04, leftPt.z);
+      normals.push(0, 1, 0);
+      uvs.push(0, t * 65);
+
+      // Vertex 2: Right road surface top (y = elevation + 0.04)
+      positions.push(rightPt.x, elevation + 0.04, rightPt.z);
+      normals.push(0, 1, 0);
+      uvs.push(1, t * 65);
+
+      // Vertex 3: Right side skirt bottom (in the grass, y = elevation - 0.20)
+      positions.push(rightPt.x, elevation - 0.20, rightPt.z);
+      normals.push(normal.x, 0, normal.z);
+      uvs.push(1, t * 65);
 
       if (i < divisions) {
-        const base = i * 2;
-        indices.push(base, base + 1, base + 2);
-        indices.push(base + 1, base + 3, base + 2);
+        const b = i * 4;
+        const nb = (i + 1) * 4;
+
+        // Left side skirt
+        indices.push(b, b + 1, nb);
+        indices.push(b + 1, nb + 1, nb);
+
+        // Top asphalt road deck
+        indices.push(b + 1, b + 2, nb + 1);
+        indices.push(b + 2, nb + 2, nb + 1);
+
+        // Right side skirt
+        indices.push(b + 2, b + 3, nb + 2);
+        indices.push(b + 3, nb + 3, nb + 2);
       }
     }
 
@@ -202,6 +253,9 @@ export class TrackBuilder {
       map: roadTexture,
       roughness: 0.72,
       metalness: 0.15,
+      polygonOffset: true,
+      polygonOffsetFactor: -2.0,
+      polygonOffsetUnits: -4.0,
     });
 
     const roadMesh = new THREE.Mesh(roadGeo, roadMat);
@@ -273,6 +327,9 @@ export class TrackBuilder {
       map: kerbTex,
       roughness: 0.45,
       metalness: 0.1,
+      polygonOffset: true,
+      polygonOffsetFactor: -3.0,
+      polygonOffsetUnits: -6.0,
     });
 
     ['left', 'right'].forEach(side => {
@@ -286,14 +343,16 @@ export class TrackBuilder {
       for (let i = 0; i <= divisions; i++) {
         const t = i / divisions;
         const pt = this.spline.getPointAt(t);
+        const elevation = Math.max(0, pt.y);
         const tangent = this.spline.getTangentAt(t).normalize();
         const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
 
         const innerPt = pt.clone().addScaledVector(normal, sign * halfWidth);
         const outerPt = pt.clone().addScaledVector(normal, sign * (halfWidth + kerbWidth));
 
-        pos.push(innerPt.x, innerPt.y + 0.025, innerPt.z);
-        pos.push(outerPt.x, outerPt.y + 0.12, outerPt.z);
+        // 3D beveled curb: inner edge sits cleanly on road surface (+0.045m), crest reaches +0.14m
+        pos.push(innerPt.x, elevation + 0.045, innerPt.z);
+        pos.push(outerPt.x, elevation + 0.14, outerPt.z);
 
         normals.push(0, 1, 0, 0, 1, 0);
         uvs.push(0, t * 140, 1, t * 140);
@@ -334,7 +393,8 @@ export class TrackBuilder {
       roughness: 0.35,
     });
 
-    const postGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.15, 8);
+    // 1.35m tall posts extending down to -0.20m (firmly anchored in the ground)
+    const postGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.35, 8);
     const bracketGeo = new THREE.BoxGeometry(0.06, 0.25, 0.16);
 
     ['left', 'right'].forEach(side => {
@@ -356,11 +416,11 @@ export class TrackBuilder {
       for (let i = 0; i <= divisions; i++) {
         const t = i / divisions;
         const pt = this.spline.getPointAt(t);
+        const groundY = Math.max(0, pt.y);
         const tangent = this.spline.getTangentAt(t).normalize();
         const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
 
         const basePt = pt.clone().addScaledVector(normal, sign * barrierOffset);
-        const groundY = pt.y;
         const inward = normal.clone().multiplyScalar(-sign);
 
         for (let p = 0; p < vertCount; p++) {
@@ -382,7 +442,7 @@ export class TrackBuilder {
         if (i % 4 === 0) {
           const postPos = basePt.clone().addScaledVector(normal, sign * 0.16);
           const post = new THREE.Mesh(postGeo, postMat);
-          post.position.set(postPos.x, groundY + 0.57, postPos.z);
+          post.position.set(postPos.x, groundY + 0.47, postPos.z);
           post.castShadow = true;
           this.scene.add(post);
 
@@ -420,10 +480,12 @@ export class TrackBuilder {
 
     cornerSplineTs.forEach(t => {
       const pt = this.spline.getPointAt(t);
+      const elevation = Math.max(0, pt.y);
       const tangent = this.spline.getTangentAt(t).normalize();
       const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
 
       const pos = pt.clone().addScaledVector(normal, 10.5);
+      pos.y = elevation;
 
       const wallGroup = new THREE.Group();
       wallGroup.position.copy(pos);
@@ -508,7 +570,7 @@ export class TrackBuilder {
     const checkMat = new THREE.MeshBasicMaterial({ map: checkTex, depthWrite: false });
     const checkMesh = new THREE.Mesh(new THREE.PlaneGeometry(this.trackWidth, 3.0), checkMat);
     checkMesh.rotation.x = -Math.PI / 2;
-    checkMesh.position.set(0, 0.04, 0);
+    checkMesh.position.set(0, 0.045, 0);
     gantryGroup.add(checkMesh);
 
     this.scene.add(gantryGroup);
@@ -526,11 +588,12 @@ export class TrackBuilder {
 
     bridges.forEach(b => {
       const pt = this.spline.getPointAt(b.t);
+      const elevation = Math.max(0, pt.y);
       const tangent = this.spline.getTangentAt(b.t).normalize();
       const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
 
       const group = new THREE.Group();
-      group.position.copy(pt);
+      group.position.set(pt.x, elevation, pt.z);
       group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent);
 
       const p1 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 8.5, 1.2), metalMat);
@@ -588,10 +651,12 @@ export class TrackBuilder {
 
     markers.forEach(m => {
       const pt = this.spline.getPointAt(m.t);
+      const elevation = Math.max(0, pt.y);
       const tangent = this.spline.getTangentAt(m.t).normalize();
       const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
 
       const pos = pt.clone().addScaledVector(normal, this.trackWidth / 2 + 2.2);
+      pos.y = elevation;
 
       const board = this.buildDistanceBoard(m.text);
       board.position.copy(pos);
@@ -631,7 +696,7 @@ export class TrackBuilder {
     const trussMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.75, roughness: 0.4 });
     const hazardMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 });
 
-    const pillar1 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 3.8, 0.8), trussMat);
+    const pillar1 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 4.0, 0.8), trussMat);
     pillar1.position.set(-105 - 8.0, 1.9, -165);
     this.scene.add(pillar1);
 
@@ -740,10 +805,13 @@ export class TrackBuilder {
 
     hoardingLocations.forEach(t => {
       const pt = this.spline.getPointAt(t);
+      const elevation = Math.max(0, pt.y);
       const tangent = this.spline.getTangentAt(t).normalize();
       const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
 
       const pos = pt.clone().addScaledVector(normal, 11.2);
+      pos.y = elevation;
+
       const boardGroup = new THREE.Group();
       boardGroup.position.copy(pos);
       boardGroup.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent);

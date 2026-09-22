@@ -179,11 +179,11 @@ export class ArcadeCar {
 
   handleElevationAndJumps(delta, ramps, trackSpline, cfg) {
     // Find expected track ground elevation at current location
-    let targetGroundY = 0;
+    let targetGroundY = 0.04;
     if (trackSpline) {
       // Check closest point on spline or ramp
       const sample = trackSpline.getPointAt(this.lapProgress || 0);
-      targetGroundY = sample.y;
+      targetGroundY = Math.max(0, sample.y) + 0.04;
     }
 
     // Check if on jump ramp crest zone
