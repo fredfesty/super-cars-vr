@@ -134,7 +134,7 @@ export class XRControllerManager {
     this.scene.add(this.vrHUDGroup);
   }
 
-  updateVRHUD(speed, lap, pos, isReady) {
+  updateVRHUD(speed, lap, pos, isReady, ammo = 0) {
     if (!this.isInVR || !this.hudCtx) return;
 
     const ctx = this.hudCtx;
@@ -168,10 +168,16 @@ export class XRControllerManager {
     ctx.fillStyle = '#94a3b8';
     ctx.fillText('KM/H', 180, 175);
 
-    // Weapons ready
-    ctx.fillStyle = isReady ? '#ef4444' : '#64748b';
-    ctx.font = 'bold 26px sans-serif';
-    ctx.fillText(isReady ? '🚀 ROCKETS [A]' : 'RELOADING...', 40, 225);
+    // Weapons ready / ammo status
+    if (ammo <= 0) {
+      ctx.fillStyle = '#f59e0b';
+      ctx.font = 'bold 22px sans-serif';
+      ctx.fillText('NO AMMO (COLLECT ON ROAD)', 40, 225);
+    } else {
+      ctx.fillStyle = isReady ? '#ef4444' : '#64748b';
+      ctx.font = 'bold 24px sans-serif';
+      ctx.fillText(isReady ? `🚀 ROCKETS: ${ammo} [A]` : 'RELOADING...', 40, 225);
+    }
 
     // Steering mode indicator
     const isInv = CONFIG.controls?.invertSteer;

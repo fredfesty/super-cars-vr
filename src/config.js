@@ -17,6 +17,7 @@ export const CONFIG = {
     spinDuration: 1.5,          // Seconds car is spun out when hit by a missile
     rampBoost: 15.0,            // Vertical launch velocity on jumps
     gravity: -36.0,             // Airborne gravity
+    stuckThreshold: 2.5,        // Seconds car is stuck before auto-recovering onto road
   },
 
   // Controls
@@ -35,6 +36,10 @@ export const CONFIG = {
 
   // Combat & Weapons
   weapon: {
+    startAmmo: 0,               // Cars start with 0 ammunition (must collect on road)
+    pickupAmmo: 4,              // Rockets gained per pickup (2 twin volleys)
+    maxAmmo: 8,                 // Max rocket storage capacity
+    pickupRespawnTime: 10.0,    // Seconds before an ammo crate respawns
     rocketSpeed: 75.0,
     rocketLifetime: 2.2,
     rocketRadius: 0.6,

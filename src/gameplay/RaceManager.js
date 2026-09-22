@@ -74,6 +74,8 @@ export class RaceManager {
       car.lapProgress = slot.t;
       car.totalDistance = slot.t;
       car.finished = false;
+      car.ammo = CONFIG.weapon.startAmmo || 0;
+      car.stuckTimer = 0;
     });
 
     this.startCountdown();

@@ -34,6 +34,13 @@ export class ArcadeCar {
     // Wheel rotation accumulator
     this.wheelRotation = 0;
 
+    // Weapon ammunition count (must collect from track pickups)
+    this.ammo = CONFIG.weapon.startAmmo || 0;
+
+    // Stuck detection state
+    this.stuckTimer = 0;
+    this.laneOffset = 0; // Designated lane offset for road respawn
+
     // Race progress state (used by RaceManager)
     this.lap = 1;
     this.checkpointIndex = 0;
@@ -55,13 +62,30 @@ export class ArcadeCar {
     this.lateralVelocity = 0;
     this.verticalVelocity = 0;
     this.elevation = pos.y;
+    this.stuckTimer = 0;
     this.forward.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)).normalize();
     this.right.set(this.forward.z, 0, -this.forward.x).normalize();
     this.updateMeshTransforms();
   }
 
-  update(delta, input, colliders, ramps, trackSpline) {
+  update(delta, input, colliders, ramps, trackSpline, isRaceActive = true) {
     const cfg = CONFIG.car;
+
+    // Check stuck condition when race is active
+    if (isRaceActive && !this.finished) {
+      if (Math.abs(this.speed) < 2.5) {
+        this.stuckTimer += delta;
+      } else {
+        this.stuckTimer = Math.max(0, this.stuckTimer - delta * 2.0);
+      }
+
+      const threshold = cfg.stuckThreshold || 2.5;
+      if (this.stuckTimer >= threshold) {
+        this.resetToRoad(trackSpline);
+      }
+    } else {
+      this.stuckTimer = 0;
+    }
 
     // 1. Handle Missile Spin-Out
     if (this.isSpunOut) {
@@ -425,6 +449,51 @@ export class ArcadeCar {
       const isBraking = this.speed > 2.0 && (this.lateralVelocity !== 0);
       this.mesh.taillightMaterial.emissiveIntensity = isBraking ? 5.0 : 2.0;
     }
+  }
+
+  resetToRoad(trackSpline) {
+    if (!trackSpline) return;
+
+    // Advance slightly along track progress to clear whatever obstacle or corner apex wedged the car
+    const targetT = ((this.lapProgress || 0) + 0.012) % 1.0;
+    const pt = trackSpline.getPointAt(targetT);
+    const tangent = trackSpline.getTangentAt(targetT).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
+
+    // Safely position within road surface (track width is 16m)
+    const safeLaneOffset = Math.max(-4.0, Math.min(4.0, this.laneOffset || 0));
+    const targetPos = pt.clone().addScaledVector(normal, safeLaneOffset);
+    targetPos.y = Math.max(0, pt.y) + 0.04;
+
+    this.position.copy(targetPos);
+    this.yaw = Math.atan2(tangent.x, tangent.z);
+
+    // Give immediate forward running speed along the track so car doesn't stall
+    this.speed = 12.0;
+    this.lateralVelocity = 0;
+    this.verticalVelocity = 0;
+    this.elevation = targetPos.y;
+    this.isGrounded = true;
+    this.isSpunOut = false;
+    this.spinTimer = 0;
+    this.pitch = 0;
+    this.roll = 0;
+    this.stuckTimer = 0;
+
+    this.forward.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)).normalize();
+    this.right.set(this.forward.z, 0, -this.forward.x).normalize();
+
+    // Visual sparks / flash to indicate respawn
+    if (this.particles) {
+      this.particles.emitCollisionSparks(this.position, new THREE.Vector3(0, 1, 0), 16);
+    }
+
+    if (this.soundManager && this.isPlayer) {
+      this.soundManager.playRespawn();
+    }
+
+    this.updateMeshTransforms();
   }
 
   updateMeshTransforms() {

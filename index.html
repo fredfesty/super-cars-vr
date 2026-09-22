@@ -113,6 +113,7 @@
       border-radius: 3px 3px 1px 1px;
       box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
       position: relative;
+      transition: all 0.2s ease;
     }
     .rocket-icon::after {
       content: '';
@@ -123,6 +124,14 @@
       height: 4px;
       background: #f97316;
       border-radius: 0 0 2px 2px;
+    }
+    .rocket-icon.empty {
+      background: #334155;
+      box-shadow: none;
+      opacity: 0.35;
+    }
+    .rocket-icon.empty::after {
+      background: #1e293b;
     }
     .controls-hint {
       pointer-events: auto;
@@ -275,11 +284,11 @@
         <div class="speed-val" id="speed-display">0</div>
         <div class="speed-unit">KM / H</div>
         <div class="weapons-container" id="weapons-tray">
-          <div class="rocket-icon"></div>
-          <div class="rocket-icon"></div>
-          <div class="rocket-icon"></div>
-          <div class="rocket-icon"></div>
-          <span style="font-size: 11px; margin-left: 6px; color: #f87171; font-weight: bold;">ROCKETS READY</span>
+          <div class="rocket-icon empty"></div>
+          <div class="rocket-icon empty"></div>
+          <div class="rocket-icon empty"></div>
+          <div class="rocket-icon empty"></div>
+          <span id="weapons-label" style="font-size: 11px; margin-left: 6px; color: #f59e0b; font-weight: bold;">NO AMMO (COLLECT ON TRACK)</span>
         </div>
       </div>
 

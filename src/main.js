@@ -7,6 +7,7 @@ import { TrackBuilder } from './graphics/TrackBuilder.js';
 import { ArcadeCar } from './physics/ArcadeCar.js';
 import { AIController } from './physics/AIController.js';
 import { WeaponsManager } from './gameplay/Weapons.js';
+import { AmmoPickupManager } from './gameplay/AmmoPickupManager.js';
 import { RaceManager } from './gameplay/RaceManager.js';
 import { InputManager } from './input/InputManager.js';
 import { XRControllerManager } from './input/XRController.js';
@@ -15,6 +16,8 @@ class Game {
   constructor() {
     this.container = document.getElementById('canvas-container');
     this.speedDisplay = document.getElementById('speed-display');
+    this.weaponsTray = document.getElementById('weapons-tray');
+    this.weaponsLabel = document.getElementById('weapons-label');
     this.cameraBtn = document.getElementById('camera-toggle-btn');
     this.invertBtn = document.getElementById('invert-steer-btn');
     this.restartBtn = document.getElementById('restart-btn');
@@ -147,6 +150,7 @@ class Game {
     const playerMesh = CarBuilder.createCar(CONFIG.colors.player, true);
     this.scene.add(playerMesh);
     this.playerCar = new ArcadeCar(playerMesh, true, this.soundManager, this.particles);
+    this.playerCar.ammo = 0; // Strictly 0 ammo until picked up on road
 
     // 3. Build 3 AI Competitors
     const aiColors = [CONFIG.colors.ai1, CONFIG.colors.ai2, CONFIG.colors.ai3];
@@ -158,6 +162,7 @@ class Game {
       this.scene.add(aiMesh);
 
       const aiCar = new ArcadeCar(aiMesh, false, null, this.particles);
+      aiCar.ammo = 0; // Strictly 0 ammo until picked up on road
       this.aiCars.push(aiCar);
 
       const aiLaneOffsets = [3.0, -3.0, 0.0];
@@ -173,7 +178,15 @@ class Game {
 
     this.allCars = [this.playerCar, ...this.aiCars];
 
-    // 4. Race Manager
+    // 4. Ammo Pickups on Track
+    this.ammoManager = new AmmoPickupManager(
+      this.scene,
+      this.trackData.spline,
+      this.particles,
+      this.soundManager
+    );
+
+    // 5. Race Manager
     this.raceManager = new RaceManager(
       this.trackData.spline,
       this.trackData.checkpoints,
@@ -256,11 +269,24 @@ class Game {
 
   onFireRockets() {
     if (!this.raceManager.isRacing()) return;
+    if (!this.playerCar.ammo || this.playerCar.ammo < 2) {
+      if (this.soundManager) {
+        this.soundManager.playDryFire();
+      }
+      return;
+    }
     this.weapons.fire(this.playerCar);
   }
 
   resetRace() {
     this.raceManager.setupGrid(this.playerCar, this.aiCars);
+    if (this.ammoManager) {
+      this.ammoManager.reset();
+    }
+    this.allCars.forEach(car => {
+      car.ammo = CONFIG.weapon.startAmmo || 0;
+      car.stuckTimer = 0;
+    });
   }
 
   updateCamera(delta) {
@@ -442,7 +468,8 @@ class Game {
       playerDriveInput,
       this.trackData.colliders,
       this.trackData.ramps,
-      this.trackData.spline
+      this.trackData.spline,
+      allowDrive
     );
 
     // 3. Update AI Cars
@@ -458,30 +485,38 @@ class Game {
         effectiveAIInput,
         this.trackData.colliders,
         this.trackData.ramps,
-        this.trackData.spline
+        this.trackData.spline,
+        allowDrive
       );
     });
 
     // 4. Car to Car Collisions
     this.handleCarToCarCollisions();
 
-    // 5. Update Weapons & Projectiles
+    // 5. Update Ammo Pickups (only collectible during active racing)
+    if (this.ammoManager) {
+      this.ammoManager.update(delta, this.allCars, this.playerCar, allowDrive);
+    }
+
+    // 6. Update Weapons & Projectiles
     this.weapons.update(delta, this.allCars);
 
-    // 6. Update Race State & Laps
+    // 7. Update Race State & Laps
     this.raceManager.update(delta);
 
-    // 7. Update Particles
+    // 8. Update Particles
     this.particles.update(delta, this.camera);
 
-    // 8. Update Camera
+    // 9. Update Camera
     this.updateCamera(delta);
 
-    // 9. Update HUD
+    // 10. Update HUD
     const speedKmh = Math.round(Math.abs(this.playerCar.speed) * 3.6);
     if (this.speedDisplay) {
       this.speedDisplay.innerText = speedKmh;
     }
+
+    this.updateWeaponsHUD();
 
     if (this.xrManager.isInVR) {
       const isReady = this.weapons.canFire(this.playerCar);
@@ -489,12 +524,44 @@ class Game {
         this.playerCar.speed,
         this.playerCar.lap,
         this.playerCar.rank,
-        isReady
+        isReady,
+        this.playerCar.ammo || 0
       );
     }
 
-    // 10. Render Scene
+    // 11. Render Scene
     this.renderer.render(this.scene, this.camera);
+  }
+
+  updateWeaponsHUD() {
+    if (!this.weaponsTray) return;
+    const ammo = this.playerCar.ammo || 0;
+    const icons = this.weaponsTray.querySelectorAll('.rocket-icon');
+    icons.forEach((icon, idx) => {
+      // 4 icons: each icon represents 2 rockets (up to max 8 rockets)
+      const hasRockets = (ammo >= (idx + 1) * 2);
+      if (hasRockets) {
+        icon.classList.remove('empty');
+      } else {
+        icon.classList.add('empty');
+      }
+    });
+
+    if (this.weaponsLabel) {
+      if (ammo <= 0) {
+        this.weaponsLabel.innerText = 'NO AMMO (COLLECT ON TRACK)';
+        this.weaponsLabel.style.color = '#f59e0b';
+      } else {
+        const canFire = this.weapons.canFire(this.playerCar);
+        if (canFire) {
+          this.weaponsLabel.innerText = `ROCKETS: ${ammo} [SPACE]`;
+          this.weaponsLabel.style.color = '#ef4444';
+        } else {
+          this.weaponsLabel.innerText = `RELOADING (${ammo})...`;
+          this.weaponsLabel.style.color = '#94a3b8';
+        }
+      }
+    }
   }
 
   onWindowResize() {

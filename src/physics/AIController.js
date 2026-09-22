@@ -12,6 +12,9 @@ export class AIController {
     this.topSpeed = topSpeed;
     this.weapons = weaponsManager;
     this.laneOffset = laneOffset;
+    if (this.car) {
+      this.car.laneOffset = laneOffset;
+    }
 
     this.lookAheadDistance = 0.035; // Fraction of track length to aim towards
     this.fireTimer = Math.random() * 4.0 + 2.0;
@@ -55,14 +58,27 @@ export class AIController {
     // Steering input (-1 to 1): positive steer turns right (increases yaw)
     this.input.steer = Math.max(-1.0, Math.min(1.0, angleDiff * 2.5));
 
-    // Throttle management: brake for sharp turns
+    // Throttle management: brake smoothly only if going too fast into corners
     const turnSeverity = Math.abs(angleDiff);
-    if (turnSeverity > 0.5) {
-      this.input.throttle = 0.4; // Slow down for corners
-    } else if (turnSeverity > 0.85) {
-      this.input.throttle = -0.15; // Hard brake into tight hairpins
+    if (turnSeverity > 0.85) {
+      if (this.car.speed > 13.0) {
+        this.input.throttle = 0.15; // Ease off throttle before tight hairpin apex
+      } else {
+        this.input.throttle = 0.7;  // Power through the turn cleanly at controllable speed
+      }
+    } else if (turnSeverity > 0.45) {
+      if (this.car.speed > 18.0) {
+        this.input.throttle = 0.35; // Feather throttle into bend
+      } else {
+        this.input.throttle = 0.85;
+      }
     } else {
       this.input.throttle = 1.0;  // Full gas on straights
+    }
+
+    // Never stall at very low speeds: maintain drive torque to unjam
+    if (this.car.speed < 4.0) {
+      this.input.throttle = Math.max(this.input.throttle, 0.8);
     }
 
     // Car speed limit check for this AI's skill tier
@@ -97,8 +113,8 @@ export class AIController {
       }
     }
 
-    // 4. Combat / Missile firing AI
-    if (this.weapons && playerCar) {
+    // 4. Combat / Missile firing AI (strictly requires collected ammunition)
+    if (this.weapons && playerCar && this.weapons.hasAmmo(this.car)) {
       this.fireTimer -= delta;
       if (this.fireTimer <= 0) {
         this.fireTimer = Math.random() * 5.0 + 3.0;

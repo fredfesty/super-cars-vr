@@ -263,4 +263,77 @@ export class SoundManager {
     }
     return curve;
   }
+
+  playAmmoPickup() {
+    if (!this.initialized || !this.ctx || this.isMuted) return;
+
+    const t = this.ctx.currentTime;
+    const notes = [587.33, 739.99, 880.0, 1174.66]; // D5, F#5, A5, D6 triumphant arpeggio
+    notes.forEach((freq, idx) => {
+      const noteTime = t + idx * 0.055;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, noteTime);
+
+      gain.gain.setValueAtTime(0.28, noteTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, noteTime + 0.18);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(noteTime);
+      osc.stop(noteTime + 0.18);
+    });
+  }
+
+  playDryFire() {
+    if (!this.initialized || !this.ctx || this.isMuted) return;
+
+    const t = this.ctx.currentTime;
+    // Crisp metallic double-click
+    [0, 0.06].forEach((offset) => {
+      const clickTime = t + offset;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1400, clickTime);
+      osc.frequency.exponentialRampToValueAtTime(300, clickTime + 0.035);
+
+      gain.gain.setValueAtTime(0.25, clickTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, clickTime + 0.035);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(clickTime);
+      osc.stop(clickTime + 0.035);
+    });
+  }
+
+  playRespawn() {
+    if (!this.initialized || !this.ctx || this.isMuted) return;
+
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(220, t);
+    osc.frequency.exponentialRampToValueAtTime(660, t + 0.22);
+
+    gain.gain.setValueAtTime(0.35, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(t);
+    osc.stop(t + 0.25);
+
+    this.playNoiseBurst(0.18, 0.2, 1000);
+  }
 }
+

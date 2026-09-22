@@ -35,10 +35,17 @@ export class WeaponsManager {
   }
 
   canFire(car) {
+    // Car must possess ammunition collected from track
+    if (!car || !car.ammo || car.ammo < 2) return false;
+
     if (!this.cooldowns.has(car)) return true;
     const lastFired = this.cooldowns.get(car);
     const now = performance.now() / 1000;
     return (now - lastFired) >= CONFIG.weapon.cooldown;
+  }
+
+  hasAmmo(car) {
+    return Boolean(car && car.ammo && car.ammo >= 2);
   }
 
   fire(car) {
@@ -46,6 +53,9 @@ export class WeaponsManager {
 
     const now = performance.now() / 1000;
     this.cooldowns.set(car, now);
+
+    // Consume 2 rockets for the twin front-mounted volley
+    car.ammo = Math.max(0, (car.ammo || 0) - 2);
 
     // Fire dual twin rockets from the hood launcher pods
     this.spawnRocket(car, -0.45);
